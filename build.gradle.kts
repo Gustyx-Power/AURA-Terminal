@@ -19,6 +19,9 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.9.0")
+    
+    // Terminal PTY
+    implementation("org.jetbrains.pty4j:pty4j:0.12.13")
 }
 
 compose.desktop {
