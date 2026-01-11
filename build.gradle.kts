@@ -38,12 +38,16 @@ compose.desktop {
         mainClass = "MainKt"
         
         nativeDistributions {
-            targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.AppImage)
             packageName = "AURA-Terminal"
             packageVersion = "1.0.0"
             
             linux {
+                targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.AppImage)
                 iconFile.set(project.file("icons/icon.png"))
+            }
+
+            macOS {
+                targetFormats(TargetFormat.Dmg)
             }
         }
     }

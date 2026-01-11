@@ -98,7 +98,7 @@ fun main() = application {
             state = windowState,
             resizable = true,
             undecorated = useUndecorated,
-            transparent = true
+            transparent = useUndecorated
     ) {
         LaunchedEffect(Unit) {
             if (isLinux) {
