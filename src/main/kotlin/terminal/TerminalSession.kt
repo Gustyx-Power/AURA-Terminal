@@ -12,8 +12,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
-/** PTY-based terminal session manager */
 class TerminalSession(
+        private val shell: String = System.getenv("SHELL") ?: "/bin/bash",
         private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 ) {
     private var process: PtyProcess? = null
@@ -32,7 +32,6 @@ class TerminalSession(
             return
         }
 
-        val shell = System.getenv("SHELL") ?: "/bin/bash"
         val home = System.getenv("HOME") ?: "/home"
         val user = System.getenv("USER") ?: "user"
 
