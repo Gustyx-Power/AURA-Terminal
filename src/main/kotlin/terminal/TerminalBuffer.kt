@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.Color
 
 data class TerminalCell(
         var char: Char = ' ',
-        var foreground: Color = Color(0xFF00FFFF),
+        var foreground: Color = Color(0xFF50FA7B), // Medium Green
         var background: Color = Color.Transparent,
         var bold: Boolean = false
 )
@@ -20,10 +20,10 @@ class TerminalBuffer(var columns: Int = 120, var rows: Int = 40) {
     var cursorCol: Int = 0
         private set
 
-    var currentForeground: Color = Color(0xFF00FFFF)
+    var currentForeground: Color = Color(0xFF50FA7B)
     var currentBackground: Color = Color.Transparent
     var currentBold: Boolean = false
-    val defaultForeground = Color(0xFF00FFFF)
+    val defaultForeground = Color(0xFF50FA7B)
 
     private val ansiColors =
             mapOf(
@@ -31,18 +31,18 @@ class TerminalBuffer(var columns: Int = 120, var rows: Int = 40) {
                     31 to Color(0xFFCD0000),
                     32 to Color(0xFF00CD00),
                     33 to Color(0xFFCDCD00),
-                    34 to Color(0xFF0000EE),
+                    34 to Color(0xFF42A5F5), // Sea Blue
                     35 to Color(0xFFCD00CD),
                     36 to Color(0xFF00CDCD),
                     37 to Color(0xFFE5E5E5),
-                    39 to Color(0xFF00FFFF),
+                    39 to Color(0xFF50FA7B), // Medium Green (Default)
                     90 to Color(0xFF7F7F7F),
                     91 to Color(0xFFFF0000),
                     92 to Color(0xFF00FF00),
                     93 to Color(0xFFFFFF00),
-                    94 to Color(0xFF5C5CFF),
+                    94 to Color(0xFF82B1FF), // Bright Sea Blue
                     95 to Color(0xFFFF00FF),
-                    96 to Color(0xFF00FFFF),
+                    96 to Color(0xFF50FA7B), // Medium Green (Bright)
                     97 to Color(0xFFFFFFFF)
             )
 
