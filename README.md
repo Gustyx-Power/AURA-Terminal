@@ -1,2 +1,2 @@
 # AURA-Terminal
-A Modern Terminal For User, Repo Kosong dulu, garapnya ntar
+A Modern Terminal For User, Males Nulis
