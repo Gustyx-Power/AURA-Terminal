@@ -4,6 +4,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
@@ -87,7 +89,9 @@ fun main() = application {
 
     val osName = System.getProperty("os.name").lowercase()
     val isLinux = osName.contains("linux")
-    val useUndecorated = isLinux
+    val isMac = osName.contains("mac") || osName.contains("darwin")
+    val useUndecorated = isLinux || isMac
+    val useTransparent = isLinux
 
     Window(
             onCloseRequest = {
@@ -98,12 +102,15 @@ fun main() = application {
             state = windowState,
             resizable = true,
             undecorated = useUndecorated,
-            transparent = useUndecorated
+            transparent = useTransparent
     ) {
         LaunchedEffect(Unit) {
             if (isLinux) {
                 delay(100)
                 ui.LinuxTransparency.forceNativeBorders(window)
+            } else if (isMac) {
+                delay(500)
+                ui.MacTransparency.setTransparentBackground(window, settings.opacity)
             }
         }
 
@@ -116,39 +123,67 @@ fun main() = application {
                 if (settings.opacityMode == OpacityMode.SOLID) 1f else settings.opacity
         val windowBackground = themeColors.background.copy(alpha = backgroundAlpha)
 
+        val macCornerRadius = if (isMac) 10.dp else 0.dp
+        
         MaterialTheme(colorScheme = colorScheme) {
-            Column(modifier = Modifier.fillMaxSize().background(Color.Transparent)) {
-                // Main Content
-                Box(modifier = Modifier.weight(1f).fillMaxWidth().background(windowBackground)) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        Box(modifier = Modifier.weight(1f)) {
-                            App(terminalSession, autocompleteManager, settings)
-                        }
-
-                        if (settings.showStatusBar) {
-                            // Status bar logic
-                            StatusBar(onSettingsClick = { showSettings = !showSettings })
-                        }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (isMac) Modifier.clip(RoundedCornerShape(macCornerRadius))
+                        else Modifier
+                    )
+                    .background(
+                        color = windowBackground,
+                        shape = if (isMac) RoundedCornerShape(macCornerRadius) else RoundedCornerShape(0.dp)
+                    )
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // macOS custom titlebar (only when undecorated)
+                    if (isMac) {
+                        ui.components.MacTitleBar(
+                            window = window,
+                            title = "AURA Terminal",
+                            onClose = {
+                                terminalSession.stop()
+                                exitApplication()
+                            }
+                        )
                     }
 
-                    androidx.compose.animation.AnimatedVisibility(
-                            visible = showSettings,
-                            enter = slideInHorizontally(initialOffsetX = { it }),
-                            exit = slideOutHorizontally(targetOffsetX = { it }),
-                            modifier = Modifier.align(Alignment.CenterEnd)
-                    ) {
-                        SettingsPanel(
-                                settings = settings,
-                                onSettingsChange = { newSettings ->
-                                    if (newSettings.shell != settings.shell) {
-                                        terminalSession.stop()
-                                    }
-                                    settings = newSettings
-                                    SettingsManager.save(newSettings)
-                                },
-                                onClose = { showSettings = false },
-                                onShellInstall = { cmd -> pendingShellCommand = cmd }
-                        )
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                App(terminalSession, autocompleteManager, settings) {
+                                    terminalSession.stop()
+                                    exitApplication()
+                                }
+                            }
+
+                            if (settings.showStatusBar) {
+                                StatusBar(onSettingsClick = { showSettings = !showSettings })
+                            }
+                        }
+
+                        androidx.compose.animation.AnimatedVisibility(
+                                visible = showSettings,
+                                enter = slideInHorizontally(initialOffsetX = { it }),
+                                exit = slideOutHorizontally(targetOffsetX = { it }),
+                                modifier = Modifier.align(Alignment.CenterEnd)
+                        ) {
+                            SettingsPanel(
+                                    settings = settings,
+                                    onSettingsChange = { newSettings ->
+                                        if (newSettings.shell != settings.shell) {
+                                            terminalSession.stop()
+                                        }
+                                        settings = newSettings
+                                        SettingsManager.save(newSettings)
+                                    },
+                                    onClose = { showSettings = false },
+                                    onShellInstall = { cmd -> pendingShellCommand = cmd }
+                            )
+                        }
                     }
                 }
             }
@@ -161,7 +196,8 @@ fun main() = application {
 fun App(
         terminalSession: TerminalSession,
         autocompleteManager: AutocompleteManager,
-        settings: TerminalSettings
+        settings: TerminalSettings,
+        onExit: () -> Unit
 ) {
     val terminalBuffer = remember { TerminalBuffer(columns = 120, rows = 40) }
     var bufferVersion by remember { mutableStateOf(0) }
@@ -355,7 +391,8 @@ fun App(
                                                 {
                                                     terminalBuffer.clear()
                                                     bufferVersion++
-                                                }
+                                                },
+                                                onExit
                                         )
                                     } else false
                                 }
@@ -499,13 +536,18 @@ private fun handleKeyEvent(
         onGhostTextChange: (String?) -> Unit,
         onHistoryIndexChange: (Int) -> Unit,
         onSavedInputChange: (String) -> Unit,
-        onClearOutput: () -> Unit
+        onClearOutput: () -> Unit,
+        onExit: () -> Unit
 ): Boolean {
     if (isModifierOnlyKey(event.key)) return false
     return when {
-        // (Same as before)
         event.key == Key.Enter -> {
             if (currentInput.isNotEmpty()) {
+                val trimmedInput = currentInput.trim()
+                if (trimmedInput == "exit" || trimmedInput == "logout") {
+                    onExit()
+                    return true
+                }
                 autocompleteManager.addToHistory(currentInput)
                 terminalSession.sendCommand(currentInput)
                 onInputChange("")
