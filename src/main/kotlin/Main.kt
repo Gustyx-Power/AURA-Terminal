@@ -1,3 +1,6 @@
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
@@ -9,7 +12,9 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -23,7 +28,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
@@ -41,66 +45,124 @@ import kotlinx.coroutines.flow.collectLatest
 import terminal.AutocompleteManager
 import terminal.TerminalBuffer
 import terminal.TerminalSession
-import ui.components.CustomTitleBar
-import ui.components.isMac
+import ui.components.StatusBar
+import ui.settings.CursorStyle
+import ui.settings.FontManager
+import ui.settings.OpacityMode
+import ui.settings.SettingsManager
+import ui.settings.SettingsPanel
+import ui.settings.ShellManager
+import ui.settings.TerminalSettings
+import ui.settings.Theme
+import ui.settings.getThemeColors
 
-// Colors
-val NeonCyan = Color(0xFF00FFFF)
-val GhostGray = Color(0xFF666666)
-val CursorColor = Color(0xFFFFFFFF)
-val TerminalBackground = Color(0xFF0D0D0D)
+val WINDOW_WIDTH = 800.dp
+val WINDOW_HEIGHT = 600.dp
 
-// Terminal config
-const val TERMINAL_COLUMNS = 80
-const val TERMINAL_ROWS = 60
-const val CHAR_WIDTH = 9
-const val CHAR_HEIGHT = 18
-val WINDOW_WIDTH = 749.dp
-val WINDOW_HEIGHT = 601.dp
-
-private val OSC_TITLE_REGEX = Regex("\u001B\\]0;[^\u0007]*\u0007")
-
-fun stripOscTitleSequences(text: String) = text.replace(OSC_TITLE_REGEX, "")
-
+@OptIn(ExperimentalComposeUiApi::class)
 fun main() = application {
-    val terminalSession = remember { TerminalSession() }
+    // Load saved settings or use defaults
+    var settings by remember { mutableStateOf(SettingsManager.load()) }
+    var showSettings by remember { mutableStateOf(false) }
+    var pendingShellCommand by remember { mutableStateOf(null as String?) }
+
+    // Create terminal session with current shell setting
+    val terminalSession =
+            remember(settings.shell) { TerminalSession(shell = settings.shell).also { it.start() } }
     val autocompleteManager = remember { AutocompleteManager() }
+
     val windowState =
             rememberWindowState(
                     size = DpSize(WINDOW_WIDTH, WINDOW_HEIGHT),
-                    position = WindowPosition.Aligned(androidx.compose.ui.Alignment.Center)
+                    position = WindowPosition.Aligned(Alignment.Center)
             )
 
-    LaunchedEffect(Unit) { terminalSession.start() }
+    // Handle shell installation command
+    LaunchedEffect(pendingShellCommand) {
+        pendingShellCommand?.let { cmd ->
+            terminalSession.sendCommand(cmd)
+            pendingShellCommand = null
+        }
+    }
+
+    val osName = System.getProperty("os.name").lowercase()
+    val isLinux = osName.contains("linux")
+    val useUndecorated = isLinux
 
     Window(
             onCloseRequest = {
                 terminalSession.stop()
                 exitApplication()
             },
-            title = "Aura Terminal",
+            title = "AURA Terminal",
             state = windowState,
             resizable = true,
-            undecorated = true
+            undecorated = useUndecorated,
+            transparent = true
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            CustomTitleBar(
-                    title = "Aura Terminal",
-                    windowState = windowState,
-                    onClose = {
-                        terminalSession.stop()
-                        exitApplication()
-                    },
-                    onMinimize = { windowState.isMinimized = true }
-            )
-            App(terminalSession, autocompleteManager)
+        LaunchedEffect(Unit) {
+            if (isLinux) {
+                delay(100)
+                ui.LinuxTransparency.forceNativeBorders(window)
+            }
+        }
+
+        val themeColors = getThemeColors(settings.theme)
+        val colorScheme =
+                if (settings.theme == Theme.DARK) darkColorScheme() else lightColorScheme()
+
+        // Background Alpha
+        val backgroundAlpha =
+                if (settings.opacityMode == OpacityMode.SOLID) 1f else settings.opacity
+        val windowBackground = themeColors.background.copy(alpha = backgroundAlpha)
+
+        MaterialTheme(colorScheme = colorScheme) {
+            Column(modifier = Modifier.fillMaxSize().background(Color.Transparent)) {
+                // Main Content
+                Box(modifier = Modifier.weight(1f).fillMaxWidth().background(windowBackground)) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            App(terminalSession, autocompleteManager, settings)
+                        }
+
+                        if (settings.showStatusBar) {
+                            // Status bar logic
+                            StatusBar(onSettingsClick = { showSettings = !showSettings })
+                        }
+                    }
+
+                    androidx.compose.animation.AnimatedVisibility(
+                            visible = showSettings,
+                            enter = slideInHorizontally(initialOffsetX = { it }),
+                            exit = slideOutHorizontally(targetOffsetX = { it }),
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                    ) {
+                        SettingsPanel(
+                                settings = settings,
+                                onSettingsChange = { newSettings ->
+                                    if (newSettings.shell != settings.shell) {
+                                        terminalSession.stop()
+                                    }
+                                    settings = newSettings
+                                    SettingsManager.save(newSettings)
+                                },
+                                onClose = { showSettings = false },
+                                onShellInstall = { cmd -> pendingShellCommand = cmd }
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun App(terminalSession: TerminalSession, autocompleteManager: AutocompleteManager) {
+fun App(
+        terminalSession: TerminalSession,
+        autocompleteManager: AutocompleteManager,
+        settings: TerminalSettings
+) {
     val terminalBuffer = remember { TerminalBuffer(columns = 120, rows = 40) }
     var bufferVersion by remember { mutableStateOf(0) }
     val scrollState = rememberScrollState()
@@ -111,20 +173,19 @@ fun App(terminalSession: TerminalSession, autocompleteManager: AutocompleteManag
     val focusRequester = remember { FocusRequester() }
     var showCursor by remember { mutableStateOf(true) }
 
-    // Selection state
     var selectionStartRow by remember { mutableStateOf(-1) }
     var selectionStartCol by remember { mutableStateOf(-1) }
     var selectionEndRow by remember { mutableStateOf(-1) }
     var selectionEndCol by remember { mutableStateOf(-1) }
     var isSelecting by remember { mutableStateOf(false) }
 
-    // Context menu state
     var showContextMenu by remember { mutableStateOf(false) }
     var contextMenuPosition by remember { mutableStateOf(Offset.Zero) }
 
-    val selectionColor = Color(0xFF3367D6)
-    val charWidth = 8.5f
-    val charHeight = 18f
+    val themeColors = getThemeColors(settings.theme)
+    val fontSize = settings.fontSize
+    val charWidth = fontSize * 0.6f
+    val charHeight = fontSize.toFloat() + 4f
     val paddingOffset = 16f
 
     fun positionToCell(x: Float, y: Float): Pair<Int, Int> {
@@ -150,7 +211,6 @@ fun App(terminalSession: TerminalSession, autocompleteManager: AutocompleteManag
                                 selectionEndCol
                         )
                 else listOf(selectionEndRow, selectionEndCol, selectionStartRow, selectionStartCol)
-
         return when {
             row < sRow || row > eRow -> false
             row == sRow && row == eRow -> col >= sCol && col <= eCol
@@ -178,15 +238,13 @@ fun App(terminalSession: TerminalSession, autocompleteManager: AutocompleteManag
         isSelecting = false
     }
 
-    // Cursor blink
     LaunchedEffect(Unit) {
         while (true) {
-            delay(500)
+            delay(530)
             showCursor = !showCursor
         }
     }
 
-    // Process terminal output
     LaunchedEffect(terminalSession) {
         terminalSession.outputFlow.collectLatest { newOutput ->
             terminalBuffer.processOutput(newOutput)
@@ -194,226 +252,232 @@ fun App(terminalSession: TerminalSession, autocompleteManager: AutocompleteManag
         }
     }
 
-    // Auto-scroll
     LaunchedEffect(bufferVersion, currentInput) {
         delay(16)
         scrollState.scrollTo(scrollState.maxValue)
     }
-
-    // Ghost text
     LaunchedEffect(currentInput) {
         ghostText =
                 if (currentInput.isNotEmpty()) autocompleteManager.getGhostText(currentInput)
                 else null
     }
-
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
-    MaterialTheme(colorScheme = darkColorScheme()) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            Box(
-                    modifier =
-                            Modifier.fillMaxSize()
-                                    .background(TerminalBackground)
-                                    .focusRequester(focusRequester)
-                                    .focusable()
-                                    .pointerInput(Unit) {
-                                        awaitPointerEventScope {
-                                            while (true) {
-                                                val event = awaitPointerEvent()
-                                                val position =
-                                                        event.changes.firstOrNull()?.position
-                                                                ?: Offset.Zero
-
-                                                when (event.type) {
-                                                    PointerEventType.Press -> {
-                                                        focusRequester.requestFocus()
-                                                        if (event.button == PointerButton.Secondary
-                                                        ) {
-                                                            contextMenuPosition = position
-                                                            showContextMenu = true
-                                                        } else if (event.button ==
-                                                                        PointerButton.Primary
-                                                        ) {
-                                                            showContextMenu = false
-                                                            val (row, col) =
-                                                                    positionToCell(
-                                                                            position.x,
-                                                                            position.y
-                                                                    )
-                                                            selectionStartRow = row
-                                                            selectionStartCol = col
-                                                            selectionEndRow = row
-                                                            selectionEndCol = col
-                                                            isSelecting = true
-                                                        }
+    Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+                modifier =
+                        Modifier.fillMaxSize()
+                                .background(Color.Transparent)
+                                .focusRequester(focusRequester)
+                                .focusable()
+                                .pointerInput(Unit) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            val position =
+                                                    event.changes.firstOrNull()?.position
+                                                            ?: Offset.Zero
+                                            when (event.type) {
+                                                PointerEventType.Press -> {
+                                                    focusRequester.requestFocus()
+                                                    if (event.button == PointerButton.Secondary) {
+                                                        contextMenuPosition = position
+                                                        showContextMenu = true
+                                                    } else if (event.button == PointerButton.Primary
+                                                    ) {
+                                                        showContextMenu = false
+                                                        val (row, col) =
+                                                                positionToCell(
+                                                                        position.x,
+                                                                        position.y
+                                                                )
+                                                        selectionStartRow = row
+                                                        selectionStartCol = col
+                                                        selectionEndRow = row
+                                                        selectionEndCol = col
+                                                        isSelecting = true
                                                     }
-                                                    PointerEventType.Move -> {
-                                                        if (isSelecting &&
-                                                                        event.changes.any {
-                                                                            it.pressed
-                                                                        }
-                                                        ) {
-                                                            val (row, col) =
-                                                                    positionToCell(
-                                                                            position.x,
-                                                                            position.y
-                                                                    )
-                                                            selectionEndRow = row
-                                                            selectionEndCol = col
-                                                        }
+                                                }
+                                                PointerEventType.Move -> {
+                                                    if (isSelecting &&
+                                                                    event.changes.any { it.pressed }
+                                                    ) {
+                                                        val (row, col) =
+                                                                positionToCell(
+                                                                        position.x,
+                                                                        position.y
+                                                                )
+                                                        selectionEndRow = row
+                                                        selectionEndCol = col
                                                     }
-                                                    PointerEventType.Release -> {
-                                                        if (isSelecting) {
-                                                            isSelecting = false
-                                                            if (selectionStartRow ==
-                                                                            selectionEndRow &&
-                                                                            selectionStartCol ==
-                                                                                    selectionEndCol
-                                                            )
-                                                                    clearSelection()
-                                                        }
+                                                }
+                                                PointerEventType.Release -> {
+                                                    if (isSelecting) {
+                                                        isSelecting = false
+                                                        if (selectionStartRow == selectionEndRow &&
+                                                                        selectionStartCol ==
+                                                                                selectionEndCol
+                                                        )
+                                                                clearSelection()
                                                     }
                                                 }
                                             }
                                         }
                                     }
-                                    .onKeyEvent { event ->
-                                        if (event.type == KeyEventType.KeyDown) {
-                                            if (!isModifierOnlyKey(event.key) &&
-                                                            !(event.key == Key.C &&
-                                                                    event.isShiftPressed &&
-                                                                    (if (isMac) event.isMetaPressed
-                                                                    else event.isCtrlPressed))
-                                            ) {
-                                                clearSelection()
-                                            }
-                                            handleKeyEvent(
-                                                    event,
-                                                    currentInput,
-                                                    ghostText,
-                                                    historyIndex,
-                                                    savedInput,
-                                                    autocompleteManager,
-                                                    terminalSession,
-                                                    terminalBuffer,
-                                                    selectionStartRow,
-                                                    selectionStartCol,
-                                                    selectionEndRow,
-                                                    selectionEndCol,
-                                                    { currentInput = it },
-                                                    { ghostText = it },
-                                                    { historyIndex = it },
-                                                    { savedInput = it },
-                                                    {
-                                                        terminalBuffer.clear()
-                                                        bufferVersion++
-                                                    }
-                                            )
-                                        } else false
-                                    }
-            ) {
-                Column(
-                        modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(scrollState)
-                ) {
-                    @Suppress("UNUSED_VARIABLE") val unused = bufferVersion
-                    val screenContent = terminalBuffer.getScreenContent()
-                    val cursorRow = terminalBuffer.cursorRow
-                    val cursorCol = terminalBuffer.cursorCol
-
-                    val screenText = buildAnnotatedString {
-                        val maxRow = minOf(cursorRow + 1, screenContent.size)
-                        for (rowIndex in 0 until maxRow) {
-                            val row = screenContent[rowIndex]
-                            for ((colIndex, cell) in row.withIndex()) {
-                                var char = cell.char
-                                var fg = cell.foreground
-                                var bg = cell.background
-
-                                val visualCursorCol =
-                                        if (rowIndex == cursorRow) cursorCol + currentInput.length
-                                        else -1
-
-                                if (rowIndex == cursorRow &&
-                                                colIndex >= cursorCol &&
-                                                colIndex < cursorCol + currentInput.length
-                                ) {
-                                    char = currentInput[colIndex - cursorCol]
-                                    fg = NeonCyan
                                 }
+                                .onKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown) {
+                                        if (!isModifierOnlyKey(event.key) &&
+                                                        !(event.key == Key.C &&
+                                                                event.isShiftPressed &&
+                                                                (if (ShellManager.isMac)
+                                                                        event.isMetaPressed
+                                                                else event.isCtrlPressed))
+                                        )
+                                                clearSelection()
+                                        handleKeyEvent(
+                                                event,
+                                                currentInput,
+                                                ghostText,
+                                                historyIndex,
+                                                savedInput,
+                                                autocompleteManager,
+                                                terminalSession,
+                                                terminalBuffer,
+                                                selectionStartRow,
+                                                selectionStartCol,
+                                                selectionEndRow,
+                                                selectionEndCol,
+                                                { currentInput = it },
+                                                { ghostText = it },
+                                                { historyIndex = it },
+                                                { savedInput = it },
+                                                {
+                                                    terminalBuffer.clear()
+                                                    bufferVersion++
+                                                }
+                                        )
+                                    } else false
+                                }
+        ) {
+            Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(scrollState)) {
+                @Suppress("UNUSED_VARIABLE") val unused = bufferVersion
+                val screenContent = terminalBuffer.getScreenContent()
+                val cursorRow = terminalBuffer.cursorRow
+                val cursorCol = terminalBuffer.cursorCol
 
-                                val isCursorPos =
-                                        rowIndex == cursorRow && colIndex == visualCursorCol
-                                val isSelected = isInSelection(rowIndex, colIndex)
+                val screenText = buildAnnotatedString {
+                    val maxRow = minOf(cursorRow + 1, screenContent.size)
+                    for (rowIndex in 0 until maxRow) {
+                        val row = screenContent[rowIndex]
+                        for ((colIndex, cell) in row.withIndex()) {
+                            var char = cell.char
+                            var fg = cell.foreground
+                            var bg = cell.background
 
-                                if (isCursorPos && showCursor) {
-                                    withStyle(
-                                            SpanStyle(
-                                                    color = CursorColor,
-                                                    background =
-                                                            if (isSelected) selectionColor
-                                                            else Color.Unspecified
-                                            )
-                                    ) { append("\u2588") }
-                                } else {
-                                    val finalBg =
-                                            when {
-                                                isSelected -> selectionColor
-                                                bg != Color.Transparent -> bg
-                                                else -> Color.Unspecified
-                                            }
-                                    withStyle(SpanStyle(color = fg, background = finalBg)) {
-                                        append(char)
-                                    }
+                            val visualCursorCol =
+                                    if (rowIndex == cursorRow) cursorCol + currentInput.length
+                                    else -1
+
+                            // Current Input Logic
+                            if (rowIndex == cursorRow &&
+                                            colIndex >= cursorCol &&
+                                            colIndex < cursorCol + currentInput.length
+                            ) {
+                                char = currentInput[colIndex - cursorCol]
+                                fg = themeColors.foreground
+                            }
+
+                            // Ghost Text Logic (Autocomplete Preview)
+                            val inputEndCol = cursorCol + currentInput.length
+                            val ghostStr = ghostText
+                            if (ghostStr != null &&
+                                            rowIndex == cursorRow &&
+                                            colIndex >= inputEndCol &&
+                                            colIndex < inputEndCol + ghostStr.length
+                            ) {
+                                char = ghostStr[colIndex - inputEndCol]
+                                fg = Color.Gray.copy(alpha = 0.6f)
+                            }
+
+                            val isCursorPos = rowIndex == cursorRow && colIndex == visualCursorCol
+                            val isSelected = isInSelection(rowIndex, colIndex)
+
+                            if (isCursorPos && showCursor) {
+                                val cursorChar =
+                                        when (settings.cursorStyle) {
+                                            CursorStyle.BLOCK -> "\u2588"
+                                            CursorStyle.LINE -> "|"
+                                            CursorStyle.UNDERLINE -> "_"
+                                        }
+                                withStyle(
+                                        SpanStyle(
+                                                color = themeColors.cursor,
+                                                background =
+                                                        if (isSelected) themeColors.selection
+                                                        else Color.Unspecified
+                                        )
+                                ) { append(cursorChar) }
+                            } else {
+                                val finalBg =
+                                        when {
+                                            isSelected -> themeColors.selection
+                                            bg != Color.Transparent -> bg
+                                            else -> Color.Unspecified
+                                        }
+                                withStyle(SpanStyle(color = fg, background = finalBg)) {
+                                    append(char)
                                 }
                             }
-                            if (rowIndex < maxRow - 1) append("\n")
                         }
+                        if (rowIndex < maxRow - 1) append("\n")
                     }
-
-                    BasicText(
-                            text = screenText,
-                            style =
-                                    TextStyle(
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 14.sp,
-                                            lineHeight = 18.sp
-                                    )
-                    )
                 }
-            }
 
-            // Context menu
-            DropdownMenu(
-                    expanded = showContextMenu,
-                    onDismissRequest = { showContextMenu = false },
-                    offset =
-                            DpOffset((contextMenuPosition.x / 2).dp, (contextMenuPosition.y / 2).dp)
-            ) {
-                DropdownMenuItem(
-                        text = { Text("Copy") },
-                        onClick = {
-                            val text = getSelectedText().ifEmpty { terminalBuffer.getAllText() }
-                            if (text.isNotEmpty()) setClipboardText(text)
-                            showContextMenu = false
-                        }
-                )
-                DropdownMenuItem(
-                        text = { Text("Paste") },
-                        onClick = {
-                            getClipboardText()?.let { currentInput += it }
-                            showContextMenu = false
-                        }
-                )
-                DropdownMenuItem(
-                        text = { Text("Clear") },
-                        onClick = {
-                            terminalBuffer.clear()
-                            bufferVersion++
-                            showContextMenu = false
-                        }
+                BasicText(
+                        text = screenText,
+                        style =
+                                TextStyle(
+                                        fontFamily =
+                                                FontManager.loadFont(
+                                                        settings.fontFamily,
+                                                        settings.fontSource
+                                                ),
+                                        fontSize = fontSize.sp,
+                                        lineHeight = (fontSize + 4).sp
+                                )
                 )
             }
+        }
+
+        DropdownMenu(
+                expanded = showContextMenu,
+                onDismissRequest = { showContextMenu = false },
+                offset = DpOffset((contextMenuPosition.x / 2).dp, (contextMenuPosition.y / 2).dp)
+        ) {
+            DropdownMenuItem(
+                    text = { Text("Copy") },
+                    onClick = {
+                        val text = getSelectedText().ifEmpty { terminalBuffer.getAllText() }
+                        if (text.isNotEmpty()) setClipboardText(text)
+                        showContextMenu = false
+                    }
+            )
+            DropdownMenuItem(
+                    text = { Text("Paste") },
+                    onClick = {
+                        getClipboardText()?.let { currentInput += it }
+                        showContextMenu = false
+                    }
+            )
+            DropdownMenuItem(
+                    text = { Text("Clear") },
+                    onClick = {
+                        terminalBuffer.clear()
+                        bufferVersion++
+                        showContextMenu = false
+                    }
+            )
         }
     }
 }
@@ -438,8 +502,8 @@ private fun handleKeyEvent(
         onClearOutput: () -> Unit
 ): Boolean {
     if (isModifierOnlyKey(event.key)) return false
-
     return when {
+        // (Same as before)
         event.key == Key.Enter -> {
             if (currentInput.isNotEmpty()) {
                 autocompleteManager.addToHistory(currentInput)
@@ -466,18 +530,16 @@ private fun handleKeyEvent(
             if (size > 0) {
                 if (historyIndex == -1) onSavedInputChange(currentInput)
                 if (historyIndex < size - 1) {
-                    val idx = historyIndex + 1
-                    onHistoryIndexChange(idx)
-                    autocompleteManager.getHistoryAt(idx)?.let { onInputChange(it) }
+                    onHistoryIndexChange(historyIndex + 1)
+                    autocompleteManager.getHistoryAt(historyIndex + 1)?.let { onInputChange(it) }
                 }
             }
             true
         }
         event.key == Key.DirectionDown -> {
             if (historyIndex > 0) {
-                val idx = historyIndex - 1
-                onHistoryIndexChange(idx)
-                autocompleteManager.getHistoryAt(idx)?.let { onInputChange(it) }
+                onHistoryIndexChange(historyIndex - 1)
+                autocompleteManager.getHistoryAt(historyIndex - 1)?.let { onInputChange(it) }
             } else if (historyIndex == 0) {
                 onHistoryIndexChange(-1)
                 onInputChange(savedInput)
@@ -501,13 +563,13 @@ private fun handleKeyEvent(
         }
         event.key == Key.V &&
                 event.isShiftPressed &&
-                (if (isMac) event.isMetaPressed else event.isCtrlPressed) -> {
+                (if (ShellManager.isMac) event.isMetaPressed else event.isCtrlPressed) -> {
             getClipboardText()?.let { onInputChange(currentInput + it) }
             true
         }
         event.key == Key.C &&
                 event.isShiftPressed &&
-                (if (isMac) event.isMetaPressed else event.isCtrlPressed) -> {
+                (if (ShellManager.isMac) event.isMetaPressed else event.isCtrlPressed) -> {
             if (selectionStartRow >= 0 && selectionEndRow >= 0) {
                 val text =
                         terminalBuffer.getTextRange(
