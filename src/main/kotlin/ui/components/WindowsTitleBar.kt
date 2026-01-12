@@ -26,10 +26,13 @@ import java.awt.Frame
  * Custom Windows-style titlebar with minimize, maximize, close buttons on the right
  */
 @Composable
+
 fun WindowsTitleBar(
     window: Window,
     title: String = "AURA Terminal",
     onClose: () -> Unit,
+    showSettings: Boolean = false,
+    onSettingsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var isDragging by remember { mutableStateOf(false) }
@@ -81,6 +84,14 @@ fun WindowsTitleBar(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (showSettings) {
+                WindowsControlButton(
+                    symbol = "⚙", // Gear icon for settings
+                    hoverColor = Color(0xFF404040),
+                    onClick = onSettingsClick
+                )
+            }
+
             WindowsControlButton(
                 symbol = "─",
                 hoverColor = Color(0xFF404040),
