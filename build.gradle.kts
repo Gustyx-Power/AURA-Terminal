@@ -48,6 +48,12 @@ compose.desktop {
 
             macOS {
                 targetFormats(TargetFormat.Dmg)
+                iconFile.set(project.file("icons/icon.png"))
+            }
+            
+            windows {
+                targetFormats(TargetFormat.Exe, TargetFormat.Msi)
+                iconFile.set(project.file("icons/icon.png"))
             }
         }
     }

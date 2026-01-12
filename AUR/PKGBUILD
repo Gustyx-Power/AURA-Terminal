@@ -1,0 +1,36 @@
+# Maintainer: Your Name <your.email@example.com>
+pkgname=aura-terminal-bin
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="A modern, transparent terminal emulator built with Compose Multiplatform"
+arch=('x86_64')
+url="https://github.com/your-username/AURA-Terminal"
+license=('Apache')
+depends=('java-runtime>=17' 'gtk3')
+optdepends=('vte3: for better terminal emulation support if needed')
+provides=('aura-terminal')
+conflicts=('aura-terminal')
+
+# You can use the .deb or .rpm release to extract the files
+# source=("https://github.com/your-username/AURA-Terminal/releases/download/v${pkgver}/AURA-Terminal-${pkgver}.deb")
+# sha256sums=('YOUR_SHA256_SUM_HERE')
+
+# NOTE: Since this is a template, we assume you might package the built .deb or just the jar
+# A common strategy for Compose apps is to repackage the .deb content
+# or simple use the application image.
+
+package() {
+    # Example logic if using .deb source
+    # tar -xf data.tar.xz -C "${pkgdir}"
+    
+    # Placeholder echo
+    echo "This is a template PKGBUILD. You need to point 'source' to your release artifact."
+    echo "Usually, for Compose Desktop, you take the .deb output and extract it here."
+    
+    # Create directories
+    # install -d "${pkgdir}/opt/aura-terminal"
+    # install -d "${pkgdir}/usr/bin"
+    
+    # Symlink binary
+    # ln -s "/opt/aura-terminal/bin/AURA-Terminal" "${pkgdir}/usr/bin/aura-terminal"
+}
