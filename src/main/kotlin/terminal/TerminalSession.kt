@@ -3,14 +3,15 @@ package terminal
 import com.pty4j.PtyProcess
 import com.pty4j.PtyProcessBuilder
 import com.pty4j.WinSize
-import java.io.BufferedReader
-import java.io.InputStreamReader
+
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+
+import kotlinx.coroutines.channels.BufferOverflow
 
 class TerminalSession(
         private val shell: String = getDefaultShell(),
@@ -21,8 +22,7 @@ class TerminalSession(
         
         fun getDefaultShell(): String {
             return if (isWindows) {
-                // Prefer PowerShell on Windows, fallback to CMD
-                System.getenv("COMSPEC") ?: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+                "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
             } else {
                 System.getenv("SHELL") ?: "/bin/bash"
             }
@@ -51,11 +51,18 @@ class TerminalSession(
     private var outputWriter: OutputStreamWriter? = null
     private var readJob: Job? = null
 
-    private val _outputFlow = MutableSharedFlow<String>(replay = 100)
+    private val _outputFlow = MutableSharedFlow<String>(
+        replay = 100,
+        extraBufferCapacity = 10000, 
+        onBufferOverflow = BufferOverflow.SUSPEND
+    )
     val outputFlow: SharedFlow<String> = _outputFlow.asSharedFlow()
 
     var isRunning: Boolean = false
         private set
+
+    private val inputChannel = kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+    private var inputJob: Job? = null
 
     fun start() {
         if (isRunning) {
@@ -70,7 +77,6 @@ class TerminalSession(
 
         try {
             val env = if (isWindows) {
-                // Windows environment - inherit most from system
                 mutableMapOf(
                     "TERM" to "xterm-256color",
                     "COLORTERM" to "truecolor",
@@ -79,7 +85,6 @@ class TerminalSession(
                     "COLUMNS" to "120",
                     "LINES" to "40"
                 ).apply {
-                    // Inherit important Windows env vars
                     System.getenv("PATH")?.let { put("PATH", it) }
                     System.getenv("SYSTEMROOT")?.let { put("SYSTEMROOT", it) }
                     System.getenv("SYSTEMDRIVE")?.let { put("SYSTEMDRIVE", it) }
@@ -108,12 +113,12 @@ class TerminalSession(
                 )
             }
 
-            // Build command based on OS
             val command = if (isWindows) {
                 if (shell.lowercase().contains("powershell")) {
-                    arrayOf(shell, "-NoLogo", "-NoExit")
+                    val promptScript = "\$e=[char]27; function prompt { return \"\$e[32mPS \$(Get-Location)>\$e[0m \" }"
+                    val encodedCmd = java.util.Base64.getEncoder().encodeToString(promptScript.toByteArray(Charsets.UTF_16LE))
+                    arrayOf(shell, "-NoLogo", "-NoExit", "-EncodedCommand", encodedCmd)
                 } else {
-                    // CMD
                     arrayOf(shell)
                 }
             } else {
@@ -134,6 +139,7 @@ class TerminalSession(
 
             println("[TerminalSession] Shell started successfully (PID: ${process!!.pid()})")
             startOutputReader()
+            startInputProcessor()
         } catch (e: Exception) {
             System.err.println("[TerminalSession] Failed to start shell: ${e.message}")
             e.printStackTrace()
@@ -143,26 +149,29 @@ class TerminalSession(
 
     private fun startOutputReader() {
         readJob =
-                scope.launch {
-                    val reader =
-                            BufferedReader(
-                                    InputStreamReader(process!!.inputStream, StandardCharsets.UTF_8)
-                            )
+                scope.launch(Dispatchers.IO) {
+                    val inputStream = process!!.inputStream
                     println("[TerminalSession] Output reader started")
 
                     try {
-                        val buffer = CharArray(4096)
+                        val buffer = ByteArray(8192)
+                        val sb = StringBuilder()
+                        
                         while (isActive && isRunning) {
-                            val bytesRead = reader.read(buffer)
-                            if (bytesRead == -1) {
-                                println("[TerminalSession] End of stream reached")
-                                break
+                            if (inputStream.available() > 0) {
+                                sb.clear()
+                                while (inputStream.available() > 0) {
+                                    val readCount = inputStream.read(buffer)
+                                    if (readCount == -1) break
+                                    sb.append(String(buffer, 0, readCount, StandardCharsets.UTF_8))
+                                }
+                                
+                                if (sb.isNotEmpty()) {
+                                    val text = sb.toString()
+                                    _outputFlow.emit(text)
+                                }
                             }
-                            if (bytesRead > 0) {
-                                val output = String(buffer, 0, bytesRead)
-                                print(output)
-                                _outputFlow.emit(output)
-                            }
+                            delay(50)
                         }
                     } catch (e: Exception) {
                         if (isRunning)
@@ -173,22 +182,26 @@ class TerminalSession(
                 }
     }
 
-    fun sendInput(input: String) {
-        if (!isRunning || outputWriter == null) {
-            System.err.println("[TerminalSession] Cannot send input: terminal not running")
-            return
-        }
-        try {
-            outputWriter?.apply {
-                write(input)
-                flush()
+    private fun startInputProcessor() {
+        inputJob = scope.launch {
+            for (input in inputChannel) {
+                try {
+                    outputWriter?.apply {
+                        write(input)
+                        flush()
+                    }
+                } catch (e: Exception) {
+                    System.err.println("[TerminalSession] Send error: ${e.message}")
+                }
             }
-        } catch (e: Exception) {
-            System.err.println("[TerminalSession] Send error: ${e.message}")
         }
     }
 
-    fun sendCommand(command: String) = sendInput("$command\n")
+    fun sendInput(input: String) {
+        inputChannel.trySend(input)
+    }
+
+    fun sendCommand(command: String) = sendInput("$command\r")
 
     fun resize(columns: Int, rows: Int) {
         process?.let {
