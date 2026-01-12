@@ -15,6 +15,7 @@ data class SettingsData(
         val opacity: Float = 1.0f,
         val opacityMode: String = "SOLID",
         val cursorStyle: String = "BLOCK",
+        val cursorColor: Long = 0xFF4CAF50,
         val shell: String = "",
         val showStatusBar: Boolean = true
 )
@@ -43,8 +44,10 @@ object SettingsManager {
                                     FontSource.SYSTEM
                                 },
                         opacity = data.opacity,
+
                         opacityMode = OpacityMode.valueOf(data.opacityMode),
                         cursorStyle = CursorStyle.valueOf(data.cursorStyle),
+                        cursorColor = data.cursorColor,
                         shell = data.shell.ifEmpty { ShellManager.getDefaultShell() },
                         showStatusBar = data.showStatusBar
                 )
@@ -69,6 +72,7 @@ object SettingsManager {
                             opacity = settings.opacity,
                             opacityMode = settings.opacityMode.name,
                             cursorStyle = settings.cursorStyle.name,
+                            cursorColor = settings.cursorColor,
                             shell = settings.shell,
                             showStatusBar = settings.showStatusBar
                     )

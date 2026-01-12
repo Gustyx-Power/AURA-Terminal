@@ -10,6 +10,7 @@ data class TerminalSettings(
         val opacity: Float = 1.0f,
         val opacityMode: OpacityMode = OpacityMode.SOLID,
         val cursorStyle: CursorStyle = CursorStyle.BLOCK,
+        val cursorColor: Long = 0xFF4CAF50, // Hacker Green
         val shell: String = ShellManager.getDefaultShell(),
         val showStatusBar: Boolean = true
 )
