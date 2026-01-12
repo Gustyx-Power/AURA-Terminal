@@ -124,10 +124,10 @@ fun SettingsPanel(
                         }
                     }
 
-                    // Opacity Slider (only for transparent/glass)
+                    // Transparency Slider (only for transparent/glass)
                     if (settings.opacityMode != OpacityMode.SOLID) {
                         Spacer(Modifier.height(12.dp))
-                        SettingLabel("Opacity")
+                        SettingLabel("Transparency")
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Slider(
                                     value = settings.opacity,
@@ -142,8 +142,9 @@ fun SettingsPanel(
                                                     activeTrackColor = AccentColor
                                             )
                             )
+                            // Display as transparency: 100% opacity = 0% transparency, 50% opacity = 50% transparency
                             Text(
-                                    "${(settings.opacity * 100).toInt()}%",
+                                    "${((1f - settings.opacity) * 100).toInt()}%",
                                     color = TextSecondary,
                                     fontSize = 12.sp,
                                     modifier = Modifier.width(40.dp)

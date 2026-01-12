@@ -90,8 +90,10 @@ fun main() = application {
     val osName = System.getProperty("os.name").lowercase()
     val isLinux = osName.contains("linux")
     val isMac = osName.contains("mac") || osName.contains("darwin")
-    val useUndecorated = isLinux || isMac
-    val useTransparent = isLinux
+    val isWindows = osName.contains("windows")
+
+    val useUndecorated = isLinux || isMac || isWindows
+    val useTransparent = isLinux || isWindows
 
     Window(
             onCloseRequest = {
@@ -111,6 +113,9 @@ fun main() = application {
             } else if (isMac) {
                 delay(500)
                 ui.MacTransparency.setTransparentBackground(window, settings.opacity)
+            } else if (isWindows) {
+                delay(300)
+                ui.WindowsTransparency.setTransparentBackground(window, settings.opacity)
             }
         }
 
@@ -139,9 +144,19 @@ fun main() = application {
                     )
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // macOS custom titlebar (only when undecorated)
                     if (isMac) {
                         ui.components.MacTitleBar(
+                            window = window,
+                            title = "AURA Terminal",
+                            onClose = {
+                                terminalSession.stop()
+                                exitApplication()
+                            }
+                        )
+                    }
+                    
+                    if (isWindows) {
+                        ui.components.WindowsTitleBar(
                             window = window,
                             title = "AURA Terminal",
                             onClose = {
