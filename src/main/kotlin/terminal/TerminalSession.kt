@@ -13,9 +13,40 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
 class TerminalSession(
-        private val shell: String = System.getenv("SHELL") ?: "/bin/bash",
+        private val shell: String = getDefaultShell(),
         private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 ) {
+    companion object {
+        private val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+        
+        fun getDefaultShell(): String {
+            return if (isWindows) {
+                // Prefer PowerShell on Windows, fallback to CMD
+                System.getenv("COMSPEC") ?: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+            } else {
+                System.getenv("SHELL") ?: "/bin/bash"
+            }
+        }
+        
+        fun getHomeDirectory(): String {
+            return if (isWindows) {
+                System.getenv("USERPROFILE") ?: System.getenv("HOMEDRIVE")?.let { 
+                    it + System.getenv("HOMEPATH") 
+                } ?: "C:\\Users"
+            } else {
+                System.getenv("HOME") ?: "/home"
+            }
+        }
+        
+        fun getUsername(): String {
+            return if (isWindows) {
+                System.getenv("USERNAME") ?: "user"
+            } else {
+                System.getenv("USER") ?: "user"
+            }
+        }
+    }
+    
     private var process: PtyProcess? = null
     private var outputWriter: OutputStreamWriter? = null
     private var readJob: Job? = null
@@ -32,29 +63,66 @@ class TerminalSession(
             return
         }
 
-        val home = System.getenv("HOME") ?: "/home"
-        val user = System.getenv("USER") ?: "user"
+        val home = getHomeDirectory()
+        val user = getUsername()
 
-        println("[TerminalSession] Starting shell: $shell")
+        println("[TerminalSession] Starting shell: $shell (Windows: $isWindows)")
 
         try {
-            val env =
-                    mapOf(
-                            "TERM" to "xterm-256color",
-                            "COLORTERM" to "truecolor",
-                            "HOME" to home,
-                            "USER" to user,
-                            "SHELL" to shell,
-                            "PATH" to (System.getenv("PATH") ?: "/usr/bin:/bin"),
-                            "LANG" to (System.getenv("LANG") ?: "en_US.UTF-8"),
-                            "LC_ALL" to (System.getenv("LC_ALL") ?: "en_US.UTF-8"),
-                            "COLUMNS" to "120",
-                            "LINES" to "40"
-                    )
+            val env = if (isWindows) {
+                // Windows environment - inherit most from system
+                mutableMapOf(
+                    "TERM" to "xterm-256color",
+                    "COLORTERM" to "truecolor",
+                    "USERPROFILE" to home,
+                    "USERNAME" to user,
+                    "COLUMNS" to "120",
+                    "LINES" to "40"
+                ).apply {
+                    // Inherit important Windows env vars
+                    System.getenv("PATH")?.let { put("PATH", it) }
+                    System.getenv("SYSTEMROOT")?.let { put("SYSTEMROOT", it) }
+                    System.getenv("SYSTEMDRIVE")?.let { put("SYSTEMDRIVE", it) }
+                    System.getenv("COMSPEC")?.let { put("COMSPEC", it) }
+                    System.getenv("TEMP")?.let { put("TEMP", it) }
+                    System.getenv("TMP")?.let { put("TMP", it) }
+                    System.getenv("HOMEDRIVE")?.let { put("HOMEDRIVE", it) }
+                    System.getenv("HOMEPATH")?.let { put("HOMEPATH", it) }
+                    System.getenv("APPDATA")?.let { put("APPDATA", it) }
+                    System.getenv("LOCALAPPDATA")?.let { put("LOCALAPPDATA", it) }
+                    System.getenv("PROGRAMFILES")?.let { put("PROGRAMFILES", it) }
+                    System.getenv("WINDIR")?.let { put("WINDIR", it) }
+                }
+            } else {
+                mapOf(
+                    "TERM" to "xterm-256color",
+                    "COLORTERM" to "truecolor",
+                    "HOME" to home,
+                    "USER" to user,
+                    "SHELL" to shell,
+                    "PATH" to (System.getenv("PATH") ?: "/usr/bin:/bin"),
+                    "LANG" to (System.getenv("LANG") ?: "en_US.UTF-8"),
+                    "LC_ALL" to (System.getenv("LC_ALL") ?: "en_US.UTF-8"),
+                    "COLUMNS" to "120",
+                    "LINES" to "40"
+                )
+            }
+
+            // Build command based on OS
+            val command = if (isWindows) {
+                if (shell.lowercase().contains("powershell")) {
+                    arrayOf(shell, "-NoLogo", "-NoExit")
+                } else {
+                    // CMD
+                    arrayOf(shell)
+                }
+            } else {
+                arrayOf(shell, "-l")
+            }
 
             process =
                     PtyProcessBuilder()
-                            .setCommand(arrayOf(shell, "-l"))
+                            .setCommand(command)
                             .setEnvironment(env)
                             .setDirectory(home)
                             .setInitialColumns(120)
