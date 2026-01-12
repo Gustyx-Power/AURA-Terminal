@@ -41,6 +41,13 @@ compose.desktop {
             packageName = "AURA-Terminal"
             packageVersion = "1.0.0"
             
+            description = "A modern, transparent terminal emulator for Windows"
+            vendor = "Xtra Manager Software"
+            copyright = "Copyright © 2026 Xtra Manager Software"
+            
+            // Fix for "NoClassDefFoundError: java/lang/management/ManagementFactory" and "com/sun/management/OperatingSystemMXBean"
+            modules("java.instrument", "java.management", "java.naming", "java.sql", "jdk.management")
+
             linux {
                 targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.AppImage)
                 iconFile.set(project.file("icons/icon.png"))
@@ -53,7 +60,19 @@ compose.desktop {
             
             windows {
                 targetFormats(TargetFormat.Exe, TargetFormat.Msi)
-                iconFile.set(project.file("icons/icon.png"))
+                // Use .ico for Windows for better compatibility
+                iconFile.set(project.file("icons/icon.ico"))
+                
+                // Fixed UUID ensures that different versions are recognized as updates/upgrades
+                // rather than separate applications.
+                upgradeUuid = "a63e0466-cc80-4c8d-bfd3-0e9569a1d9cb"
+                
+                // Allow creation of shortcuts
+                shortcut = true
+                menu = true
+                
+                // Allow user to choose install directory
+                dirChooser = true
             }
         }
     }
