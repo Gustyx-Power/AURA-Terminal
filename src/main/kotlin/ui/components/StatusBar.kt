@@ -151,8 +151,39 @@ fun StatusBar(
                     val percent = if (totalBytes > 0) (usedBytes.toDouble() / totalBytes * 100).toInt() else 0
                     
                     memoryUsage = "%.1fGB/%.0fGB (%d%%)".format(usedGb, totalGb, percent)
+                } else if (osName.contains("windows")) {
+                    // Windows: Use PowerShell to get system memory
+                    try {
+                        // Get total physical memory using PowerShell
+                        val totalMemResult = Runtime.getRuntime().exec(arrayOf(
+                            "powershell", "-NoProfile", "-Command",
+                            "(Get-CimInstance -ClassName Win32_ComputerSystem).TotalPhysicalMemory"
+                        )).inputStream.bufferedReader().readText()
+                        val totalBytes = totalMemResult.trim().toLongOrNull() ?: 0L
+                        
+                        // Get available memory using PowerShell (returns KB)
+                        val availMemResult = Runtime.getRuntime().exec(arrayOf(
+                            "powershell", "-NoProfile", "-Command",
+                            "(Get-CimInstance -ClassName Win32_OperatingSystem).FreePhysicalMemory"
+                        )).inputStream.bufferedReader().readText()
+                        val availableKb = availMemResult.trim().toLongOrNull() ?: 0L
+                        
+                        val availableBytes = availableKb * 1024
+                        val usedBytes = totalBytes - availableBytes
+                        
+                        val totalGb = totalBytes / (1024.0 * 1024.0 * 1024.0)
+                        val usedGb = usedBytes / (1024.0 * 1024.0 * 1024.0)
+                        val percent = if (totalBytes > 0) (usedBytes.toDouble() / totalBytes * 100).toInt() else 0
+                        
+                        memoryUsage = "%.1fGB/%.0fGB (%d%%)".format(usedGb, totalGb, percent)
+                    } catch (e: Exception) {
+                        // Fallback to JVM memory
+                        val runtime = Runtime.getRuntime()
+                        val usedMem = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
+                        memoryUsage = "JVM: ${usedMem}MB"
+                    }
                 } else {
-                    // Windows or other: Use JVM memory as fallback
+                    // Other OS: Use JVM memory as fallback
                     val runtime = Runtime.getRuntime()
                     val usedMem = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
                     memoryUsage = "JVM: ${usedMem}MB"
