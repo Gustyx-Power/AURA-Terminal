@@ -51,12 +51,12 @@ class TerminalSession(
     private var outputWriter: OutputStreamWriter? = null
     private var readJob: Job? = null
 
-    private val _outputFlow = MutableSharedFlow<String>(
+    private val _outputFlow = MutableSharedFlow<ByteArray>(
         replay = 100,
-        extraBufferCapacity = 10000, 
-        onBufferOverflow = BufferOverflow.SUSPEND
+        extraBufferCapacity = 1000, 
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
-    val outputFlow: SharedFlow<String> = _outputFlow.asSharedFlow()
+    val outputFlow: SharedFlow<ByteArray> = _outputFlow.asSharedFlow()
 
     var isRunning: Boolean = false
         private set
@@ -114,13 +114,7 @@ class TerminalSession(
             }
 
             val command = if (isWindows) {
-                if (shell.lowercase().contains("powershell")) {
-                    val promptScript = "\$e=[char]27; function prompt { return \"\$e[32mPS \$(Get-Location)>\$e[0m \" }"
-                    val encodedCmd = java.util.Base64.getEncoder().encodeToString(promptScript.toByteArray(Charsets.UTF_16LE))
-                    arrayOf(shell, "-NoLogo", "-NoExit", "-EncodedCommand", encodedCmd)
-                } else {
-                    arrayOf(shell)
-                }
+                arrayOf(shell, "-NoLogo", "-NoExit")
             } else {
                 arrayOf(shell, "-l")
             }
@@ -155,23 +149,22 @@ class TerminalSession(
 
                     try {
                         val buffer = ByteArray(8192)
-                        val sb = StringBuilder()
                         
                         while (isActive && isRunning) {
-                            if (inputStream.available() > 0) {
-                                sb.clear()
-                                while (inputStream.available() > 0) {
-                                    val readCount = inputStream.read(buffer)
-                                    if (readCount == -1) break
-                                    sb.append(String(buffer, 0, readCount, StandardCharsets.UTF_8))
-                                }
-                                
-                                if (sb.isNotEmpty()) {
-                                    val text = sb.toString()
-                                    _outputFlow.emit(text)
-                                }
-                            }
-                            delay(50)
+                             val available = inputStream.available()
+                             if (available > 0) {
+                                 // Read whatever is available or up to buffer size
+                                 val readCount = inputStream.read(buffer)
+                                 if (readCount == -1) break
+                                 
+                                 if (readCount > 0) {
+                                     // Crucial: emit only valid bytes
+                                     val data = buffer.copyOfRange(0, readCount)
+                                     _outputFlow.emit(data)
+                                 }
+                             } else {
+                                 delay(10) // Small delay to prevent tight loop
+                             }
                         }
                     } catch (e: Exception) {
                         if (isRunning)
