@@ -53,7 +53,8 @@ compose.desktop {
             modules("java.instrument", "java.management", "java.naming", "java.sql", "jdk.management")
 
             linux {
-                targetFormats(TargetFormat.Deb, TargetFormat.Rpm)                iconFile.set(project.file("src/main/resources/icon.png"))
+                targetFormats(TargetFormat.Deb, TargetFormat.Rpm)                
+                iconFile.set(project.file("src/main/resources/icon.png"))
 
                 packageName = "aura-terminal" 
                 packageVersion = "1.0.0"
