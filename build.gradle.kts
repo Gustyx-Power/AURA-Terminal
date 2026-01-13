@@ -1,4 +1,5 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.gradle.internal.os.OperatingSystem
 
 plugins {
     kotlin("jvm") version "2.1.0"
@@ -17,16 +18,12 @@ dependencies {
     implementation(compose.materialIconsExtended)
     implementation(compose.runtime)
     
-
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.9.0")
-    
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-    
 
     implementation("org.jetbrains.pty4j:pty4j:0.12.13")
-
 
     implementation("net.java.dev.jna:jna:5.14.0")
     implementation("net.java.dev.jna:jna-platform:5.14.0")
@@ -36,41 +33,46 @@ compose.desktop {
     application {
         mainClass = "MainKt"
         
-        jvmArgs += listOf("-Djava.library.path=${project.projectDir}/lib/windows")
+        // Dynamic library path based on OS
+        val libraryPath = if (OperatingSystem.current().isMacOsX) 
+            "${project.projectDir}/src/main/resources" 
+        else 
+            "${project.projectDir}/lib/windows"
+            
+        jvmArgs += listOf("-Djava.library.path=$libraryPath")
         
         nativeDistributions {
             packageName = "AURA-Terminal"
             packageVersion = "1.0.0"
             
-            description = "A modern, transparent terminal emulator for Windows"
+            description = "A modern, transparent terminal emulator"
             vendor = "Xtra Manager Software"
             copyright = "Copyright © 2026 Xtra Manager Software"
             
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Deb, TargetFormat.Rpm)
             modules("java.instrument", "java.management", "java.naming", "java.sql", "jdk.management")
 
             linux {
-                targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.AppImage)
                 iconFile.set(project.file("icons/icon.png"))
             }
 
             macOS {
-                targetFormats(TargetFormat.Dmg)
-                iconFile.set(project.file("icons/icon.png"))
+                iconFile.set(project.file("icons/icon.icns"))
+                bundleID = "com.aura.terminal"
+                dockName = "Aura Terminal"
+                signing {
+                    sign.set(false)
+                }
             }
             
             windows {
-                targetFormats(TargetFormat.Exe, TargetFormat.Msi)
                 iconFile.set(project.file("icons/icon.ico"))
                 
                 upgradeUuid = "a63e0466-cc80-4c8d-bfd3-0e9569a1d9cb"
                 
-
                 shortcut = true
                 menu = true
-                
                 dirChooser = true
-                
-
                 appResourcesRootDir.set(project.layout.projectDirectory.dir("lib"))
             }
 
@@ -88,33 +90,42 @@ kotlin {
     jvmToolchain(17)
 }
 
-
 val copyNativeLibs by tasks.registering(Copy::class) {
-    val osName = System.getProperty("os.name").lowercase()
-    val sourcePath = if (osName.contains("windows")) "native/aura_core/target/release/aura_terminal_core.dll"
-              else if (osName.contains("linux")) "native/aura_core/target/release/libaura_terminal_core.so"
-              else "native/aura_core/target/release/libaura_terminal_core.dylib"
+    val currentOs = OperatingSystem.current()
     
+    val sourcePath = when {
+        currentOs.isWindows -> "native/aura_core/target/release/aura_terminal_core.dll"
+        currentOs.isMacOsX -> "native/aura_core/target/release/libaura_terminal_core.dylib"
+        currentOs.isLinux -> "native/aura_core/target/release/libaura_terminal_core.so"
+        else -> throw GradleException("Unsupported OS: ${currentOs.name}")
+    }
+    
+    val destPath = when {
+        currentOs.isMacOsX -> "src/main/resources"
+        else -> "lib/windows" 
+    }
+
     from(sourcePath)
-    into("$projectDir/lib/windows")
+    into("$projectDir/$destPath")
     
     doFirst {
-        println("Copying native library from $sourcePath to $projectDir/lib")
+        println("Detected OS: ${currentOs.name}")
+        println("Copying native library from $sourcePath to $projectDir/$destPath")
     }
 }
 
-compose.desktop.application.nativeDistributions.appResourcesRootDir.set(project.layout.projectDirectory.dir("lib"))
+// Adjust resource dir setting based on OS
+if (!OperatingSystem.current().isWindows) {
+} else {
+    compose.desktop.application.nativeDistributions.appResourcesRootDir.set(project.layout.projectDirectory.dir("lib"))
+}
 
 afterEvaluate {
-    tasks.named("run") {
-        dependsOn(copyNativeLibs)
-    }
-    tasks.named("packageMsi") {
-        dependsOn(copyNativeLibs)
-    }
-    tasks.named("prepareAppResources") {
-        dependsOn(copyNativeLibs)
-    }
+    tasks.findByName("run")?.dependsOn(copyNativeLibs)
+    tasks.findByName("packageMsi")?.dependsOn(copyNativeLibs)
+    tasks.findByName("packageDmg")?.dependsOn(copyNativeLibs)
+    tasks.findByName("prepareAppResources")?.dependsOn(copyNativeLibs)
+    tasks.findByName("processResources")?.dependsOn(copyNativeLibs)
 }
 
 
