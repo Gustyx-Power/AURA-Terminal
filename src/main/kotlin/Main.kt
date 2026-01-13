@@ -110,99 +110,106 @@ fun main() = application {
             undecorated = useUndecorated,
             transparent = useTransparent
     ) {
-        LaunchedEffect(Unit) {
-            if (isLinux) {
-                delay(100)
-                ui.LinuxTransparency.forceNativeBorders(window)
-            } else if (isMac) {
-                delay(500)
-                ui.MacTransparency.setTransparentBackground(window, settings.opacity)
-            } else if (isWindows) {
-                delay(300)
-                ui.WindowsTransparency.setTransparentBackground(window, settings.opacity)
+        // Dark Acrylic Background Wrapper
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF1E1E1E).copy(alpha = 0.90f))
+        ) {
+            LaunchedEffect(Unit) {
+                if (isLinux) {
+                    delay(100)
+                    ui.LinuxTransparency.forceNativeBorders(window)
+                } else if (isMac) {
+                    delay(500)
+                    ui.MacTransparency.setTransparentBackground(window, settings.opacity)
+                } else if (isWindows) {
+                    delay(300)
+                    ui.WindowsTransparency.setTransparentBackground(window, settings.opacity)
+                }
             }
-        }
-
-        val themeColors = getThemeColors(settings.theme)
-        val colorScheme =
-                if (settings.theme == Theme.DARK) darkColorScheme() else lightColorScheme()
-
-        val backgroundAlpha =
-                if (settings.opacityMode == OpacityMode.SOLID) 1f else settings.opacity
-        val windowBackground = themeColors.background.copy(alpha = backgroundAlpha)
-
-        val macCornerRadius = if (isMac) 10.dp else 0.dp
-        
-        MaterialTheme(colorScheme = colorScheme) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(
-                        if (isMac) Modifier.clip(RoundedCornerShape(macCornerRadius))
-                        else Modifier
-                    )
-                    .background(
-                        color = windowBackground,
-                        shape = if (isMac) RoundedCornerShape(macCornerRadius) else RoundedCornerShape(0.dp)
-                    )
-            ) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    if (isMac) {
-                        ui.components.MacTitleBar(
-                            window = window,
-                            title = "AURA Terminal",
-                            onClose = {
-                                terminalSession.stop()
-                                exitApplication()
-                            }
+    
+            val themeColors = getThemeColors(settings.theme)
+            val colorScheme =
+                    if (settings.theme == Theme.DARK) darkColorScheme() else lightColorScheme()
+    
+            val backgroundAlpha =
+                    if (settings.opacityMode == OpacityMode.SOLID) 1f else settings.opacity
+            val windowBackground = themeColors.background.copy(alpha = backgroundAlpha)
+    
+            val macCornerRadius = if (isMac) 10.dp else 0.dp
+            
+            MaterialTheme(colorScheme = colorScheme) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (isMac) Modifier.clip(RoundedCornerShape(macCornerRadius))
+                            else Modifier
                         )
-                    }
-                    
-                    if (isWindows) {
-                        ui.components.WindowsTitleBar(
-                            window = window,
-                            title = "AURA Terminal",
-                            showSettings = !settings.showStatusBar,
-                            onSettingsClick = { showSettings = !showSettings },
-                            onClose = {
-                                terminalSession.stop()
-                                exitApplication()
-                            }
+                        .background(
+                            color = windowBackground,
+                            shape = if (isMac) RoundedCornerShape(macCornerRadius) else RoundedCornerShape(0.dp)
                         )
-                    }
-
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            Box(modifier = Modifier.weight(1f)) {
-                                App(terminalSession, autocompleteManager, settings) {
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (isMac) {
+                            ui.components.MacTitleBar(
+                                window = window,
+                                title = "AURA Terminal",
+                                onClose = {
                                     terminalSession.stop()
                                     exitApplication()
                                 }
-                            }
-
-                            if (settings.showStatusBar) {
-                                StatusBar(onSettingsClick = { showSettings = !showSettings })
-                            }
-                        }
-
-                        androidx.compose.animation.AnimatedVisibility(
-                                visible = showSettings,
-                                enter = slideInHorizontally(initialOffsetX = { it }),
-                                exit = slideOutHorizontally(targetOffsetX = { it }),
-                                modifier = Modifier.align(Alignment.CenterEnd)
-                        ) {
-                            SettingsPanel(
-                                    settings = settings,
-                                    onSettingsChange = { newSettings ->
-                                        if (newSettings.shell != settings.shell) {
-                                            terminalSession.stop()
-                                        }
-                                        settings = newSettings
-                                        SettingsManager.save(newSettings)
-                                    },
-                                    onClose = { showSettings = false },
-                                    onShellInstall = { cmd -> pendingShellCommand = cmd }
                             )
+                        }
+                        
+                        if (isWindows) {
+                            ui.components.WindowsTitleBar(
+                                window = window,
+                                title = "AURA Terminal",
+                                showSettings = !settings.showStatusBar,
+                                onSettingsClick = { showSettings = !showSettings },
+                                onClose = {
+                                    terminalSession.stop()
+                                    exitApplication()
+                                }
+                            )
+                        }
+    
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                Box(modifier = Modifier.weight(1f)) {
+                                    App(terminalSession, autocompleteManager, settings) {
+                                        terminalSession.stop()
+                                        exitApplication()
+                                    }
+                                }
+    
+                                if (settings.showStatusBar) {
+                                    StatusBar(onSettingsClick = { showSettings = !showSettings })
+                                }
+                            }
+    
+                            androidx.compose.animation.AnimatedVisibility(
+                                    visible = showSettings,
+                                    enter = slideInHorizontally(initialOffsetX = { it }),
+                                    exit = slideOutHorizontally(targetOffsetX = { it }),
+                                    modifier = Modifier.align(Alignment.CenterEnd)
+                            ) {
+                                SettingsPanel(
+                                        settings = settings,
+                                        onSettingsChange = { newSettings ->
+                                            if (newSettings.shell != settings.shell) {
+                                                terminalSession.stop()
+                                            }
+                                            settings = newSettings
+                                            SettingsManager.save(newSettings)
+                                        },
+                                        onClose = { showSettings = false },
+                                        onShellInstall = { cmd -> pendingShellCommand = cmd }
+                                )
+                            }
                         }
                     }
                 }
@@ -243,53 +250,16 @@ fun App(
 
     val fontSize = settings.fontSize
     
-    val processedLinesChannel = remember { kotlinx.coroutines.channels.Channel<List<String>>(kotlinx.coroutines.channels.Channel.UNLIMITED) }
-    
+
     LaunchedEffect(terminalSession) {
-        withContext(Dispatchers.IO) {
-            terminalSession.outputFlow.collect { newOutput ->
-                val sanitized = newOutput.replace("\r", "")
-                val parts = sanitized.split('\n')
-                processedLinesChannel.send(parts)
+        terminalSession.outputFlow.collect { data ->
+            withContext(Dispatchers.Main) {
+                viewModel.pushData(data)
             }
         }
     }
-    
-    LaunchedEffect(Unit) {
-        while (true) {
-            val updates = mutableListOf<List<String>>()
-            var result = processedLinesChannel.tryReceive()
-            while (result.isSuccess) {
-                updates.add(result.getOrThrow())
-                result = processedLinesChannel.tryReceive()
-            }
 
-            if (updates.isNotEmpty()) {
-                val batch = mutableListOf<String>()
-                
-                updates.forEach { parts ->
-                    parts.forEach { part ->
-                         if (part.contains("\u000C") || part.contains("\u001B[2J") || part.contains("\u001Bc")) {
-                             if (batch.isNotEmpty()) {
-                                 viewModel.pushLines(batch)
-                                 batch.clear()
-                             }
-                             viewModel.clear()
-                             batch.add(part)
-                         } else {
-                             batch.add(part)
-                         }
-                    }
-                }
-                
-                if (batch.isNotEmpty()) {
-                    viewModel.pushLines(batch)
-                }
-            }
 
-            delay(16)
-        }
-    }
     
     LaunchedEffect(viewModel.lineCount) {
         if (viewModel.lineCount > 0) {
@@ -503,7 +473,7 @@ private fun handleKeyEvent(
                 onInputChange("")
                 onGhostTextChange(null)
                 onHistoryIndexChange(-1)
-            } else terminalSession.sendInput("\n")
+            } else terminalSession.sendInput("\r")
             true
         }
         event.key == Key.Tab || (event.key == Key.DirectionRight && ghostText != null) -> {
