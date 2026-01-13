@@ -9,13 +9,10 @@ class TerminalViewModel {
     var lineCount by mutableStateOf(0)
         private set
 
-    fun pushLine(line: String) {
-        RustBridge.pushLine(line)
-        lineCount = RustBridge.getSize()
-    }
 
-    fun pushLines(lines: List<String>) {
-        lines.forEach { RustBridge.pushLine(it) }
+
+    fun pushData(data: ByteArray) {
+        RustBridge.pushData(data)
         lineCount = RustBridge.getSize()
     }
 
