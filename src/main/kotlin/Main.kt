@@ -335,6 +335,9 @@ fun App(
                     modifier = Modifier.fillMaxSize().padding(16.dp)
                 ) {
                     items(count = viewModel.lineCount) { index ->
+                        // Force recomposition on update
+                        val trigger = viewModel.updateTrigger 
+                        
                         val line = viewModel.getLine(index)
                         val isLastLine = index == viewModel.lineCount - 1
                     

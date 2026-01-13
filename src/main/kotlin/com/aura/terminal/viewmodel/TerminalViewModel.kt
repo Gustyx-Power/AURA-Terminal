@@ -9,11 +9,14 @@ class TerminalViewModel {
     var lineCount by mutableStateOf(0)
         private set
 
-
+    // Added to force recomposition even if line count doesn't change
+    var updateTrigger by mutableStateOf(0L)
+        private set
 
     fun pushData(data: ByteArray) {
         RustBridge.pushData(data)
         lineCount = RustBridge.getSize()
+        updateTrigger++
     }
 
     fun getLine(index: Int): String {
@@ -23,5 +26,6 @@ class TerminalViewModel {
     fun clear() {
         RustBridge.clear()
         lineCount = 0
+        updateTrigger++
     }
 }
