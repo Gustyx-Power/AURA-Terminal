@@ -10,3 +10,10 @@ bin/
 # OS
 .DS_Store
 Thumbs.db
+
+# Rust
+native/aura_core/target/
+native/aura_core/Cargo.lock
+*.dll
+*.so
+*.dylib
