@@ -6,7 +6,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,7 +46,7 @@ import androidx.compose.ui.window.rememberWindowState
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.StringSelection
-import java.util.concurrent.atomic.AtomicLong
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -66,7 +66,6 @@ import ui.settings.getThemeColors
 val WINDOW_WIDTH = 800.dp
 val WINDOW_HEIGHT = 600.dp
 
-data class TerminalLine(val id: Long, val text: String)
 
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -220,12 +219,8 @@ fun App(
         settings: TerminalSettings,
         onExit: () -> Unit
 ) {
-    val lines = remember { mutableStateListOf<TerminalLine>() }
+    val viewModel = remember { com.aura.terminal.viewmodel.TerminalViewModel() }
     val listState = rememberLazyListState()
-    val maxLines = 5000
-    val lineIdCounter = remember { AtomicLong(0) }
-
-
 
     var currentInput by remember { mutableStateOf("") }
     var ghostText by remember { mutableStateOf<String?>(null) }
@@ -270,77 +265,35 @@ fun App(
             }
 
             if (updates.isNotEmpty()) {
-                if (lines.isEmpty()) {
-                    lines.add(TerminalLine(lineIdCounter.getAndIncrement(), ""))
-                }
+                val batch = mutableListOf<String>()
                 
                 updates.forEach { parts ->
-                    val clearTokens = listOf("\u000C", "\u001B[2J", "\u001Bc")
-                    var clearFoundIdx = -1
-                    var clearTokenPos = -1
-                    var clearTokenLen = 0
-                    
-                    for (i in parts.indices.reversed()) {
-                        val line = parts[i]
-                        for (token in clearTokens) {
-                            val idx = line.lastIndexOf(token)
-                            if (idx != -1) {
-                                if (idx > clearTokenPos || (clearFoundIdx == -1)) {
-                                     clearFoundIdx = i
-                                     clearTokenPos = idx
-                                     clearTokenLen = token.length
-                                }
-                            }
-                        }
-                        if (clearFoundIdx != -1) break
-                    }
-                    
-                    var activeParts = parts
-                    
-                    if (clearFoundIdx != -1) {
-                        lines.clear()
-                        lines.add(TerminalLine(lineIdCounter.getAndIncrement(), ""))
-                        
-                        val clearLine = parts[clearFoundIdx]
-                        val remainingText = clearLine.substring(clearTokenPos + clearTokenLen)
-                        
-                        val newParts = mutableListOf<String>()
-                        newParts.add(remainingText)
-                        for (k in (clearFoundIdx + 1) until parts.size) {
-                            newParts.add(parts[k])
-                        }
-                        activeParts = newParts
-                    }
-
-                    if (activeParts.isNotEmpty()) {
-                        activeParts.forEachIndexed { index, part ->
-                            val lastIdx = lines.lastIndex
-                            if (index == 0) {
-                                if (lastIdx >= 0) {
-                                    val lastLine = lines[lastIdx]
-                                    lines[lastIdx] = lastLine.copy(text = lastLine.text + part)
-                                } else {
-                                    lines.add(TerminalLine(lineIdCounter.getAndIncrement(), part))
-                                }
-                            } else {
-                                lines.add(TerminalLine(lineIdCounter.getAndIncrement(), part))
-                            }
-                        }
+                    parts.forEach { part ->
+                         if (part.contains("\u000C") || part.contains("\u001B[2J") || part.contains("\u001Bc")) {
+                             if (batch.isNotEmpty()) {
+                                 viewModel.pushLines(batch)
+                                 batch.clear()
+                             }
+                             viewModel.clear()
+                             batch.add(part)
+                         } else {
+                             batch.add(part)
+                         }
                     }
                 }
                 
-                if (lines.size > maxLines) {
-                    val overflow = lines.size - maxLines
-                    lines.removeRange(0, overflow)
+                if (batch.isNotEmpty()) {
+                    viewModel.pushLines(batch)
                 }
             }
+
             delay(16)
         }
     }
     
-    LaunchedEffect(lines.size) {
-        if (lines.isNotEmpty()) {
-            listState.scrollToItem(lines.lastIndex)
+    LaunchedEffect(viewModel.lineCount) {
+        if (viewModel.lineCount > 0) {
+            listState.scrollToItem(viewModel.lineCount - 1)
         }
     }
 
@@ -398,7 +351,7 @@ fun App(
                                                 { ghostText = it },
                                                 { historyIndex = it },
                                                 { savedInput = it },
-                                                { lines.clear(); lines.add(TerminalLine(lineIdCounter.getAndIncrement(), "")) },
+                                                { viewModel.clear() },
                                                 onExit
                                         )
                                     } else false
@@ -411,91 +364,90 @@ fun App(
                     state = listState,
                     modifier = Modifier.fillMaxSize().padding(16.dp)
                 ) {
-                    items(items = lines, key = { it.id }) { lineObj ->
-                    val line = lineObj.text
-                    val isLastLine = lines.isNotEmpty() && lineObj === lines.last()
+                    items(count = viewModel.lineCount) { index ->
+                        val line = viewModel.getLine(index)
+                        val isLastLine = index == viewModel.lineCount - 1
                     
-                    Box(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                        if (isLastLine) {
-                            val styledLine = remember(line, themeColors.foreground) {
-                                AnsiParser.parse(line, themeColors.foreground)
-                            }
+                        Box(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                            if (isLastLine) {
+                                val styledLine = remember(line, themeColors.foreground) {
+                                    AnsiParser.parse(line, themeColors.foreground)
+                                }
+        
+                                val finalStyledText = remember(styledLine, currentInput, ghostText, showCursor.value, settings.cursorStyle, settings.cursorColor) {
+                                    buildAnnotatedString {
+                                        append(styledLine)
+                                        
+                                        val plainLine = AnsiParser.strip(line)
+                                        var remainingInput = currentInput
+                                        
+                                        for (i in currentInput.length downTo 1) {
+                                            val sub = currentInput.substring(0, i)
+                                            if (plainLine.endsWith(sub)) {
+                                                remainingInput = currentInput.substring(i)
+                                                break
+                                            }
+                                        }
+                                        
+                                        if (remainingInput.isNotEmpty()) {
+                                            withStyle(SpanStyle(color = themeColors.foreground)) {
+                                                append(remainingInput)
+                                            }
+                                        }
+                                        
+                                        if (ghostText != null && currentInput.isNotEmpty()) {
+                                            withStyle(SpanStyle(color = themeColors.foreground.copy(alpha = 0.5f))) {
+                                                append(ghostText)
+                                            }
+                                        }
     
-                            val finalStyledText = remember(styledLine, currentInput, ghostText, showCursor.value, settings.cursorStyle, settings.cursorColor) {
-                                buildAnnotatedString {
-                                    append(styledLine)
-                                    
-                                    val plainLine = AnsiParser.strip(line)
-                                    var remainingInput = currentInput
-                                    
-                                    for (i in currentInput.length downTo 1) {
-                                        val sub = currentInput.substring(0, i)
-                                        if (plainLine.endsWith(sub)) {
-                                            remainingInput = currentInput.substring(i)
-                                            break
-                                        }
-                                    }
-                                    
-                                    if (remainingInput.isNotEmpty()) {
-                                        withStyle(SpanStyle(color = themeColors.foreground)) {
-                                            append(remainingInput)
-                                        }
-                                    }
-                                    
-                                    if (ghostText != null && currentInput.isNotEmpty()) {
-                                        withStyle(SpanStyle(color = themeColors.foreground.copy(alpha = 0.5f))) {
-                                            append(ghostText)
-                                        }
-                                    }
-
-                                    if (showCursor.value) {
-                                        val cursorChar = when (settings.cursorStyle) {
-                                            ui.settings.CursorStyle.BLOCK -> "\u2588"
-                                            ui.settings.CursorStyle.LINE -> "|"
-                                            ui.settings.CursorStyle.UNDERLINE -> "_"
-                                        }
-                                        
-                                        val customColor = Color(settings.cursorColor)
-                                        
-                                        withStyle(SpanStyle(color = customColor)) {
-                                            append(cursorChar)
+                                        if (showCursor.value) {
+                                            val cursorChar = when (settings.cursorStyle) {
+                                                ui.settings.CursorStyle.BLOCK -> "\u2588"
+                                                ui.settings.CursorStyle.LINE -> "|"
+                                                ui.settings.CursorStyle.UNDERLINE -> "_"
+                                            }
+                                            
+                                            val customColor = Color(settings.cursorColor)
+                                            
+                                            withStyle(SpanStyle(color = customColor)) {
+                                                append(cursorChar)
+                                            }
                                         }
                                     }
                                 }
+        
+                                Text(
+                                    text = finalStyledText,
+                                    fontFamily = fontFamily,
+                                    fontSize = fontSize.sp,
+                                    color = themeColors.foreground,
+                                    lineHeight = (fontSize + 4).sp,
+                                    softWrap = false,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip
+                                )
+                            } else {
+                                // Baris history normal
+                                val styledText = remember(line, themeColors.foreground) {
+                                    AnsiParser.parse(line, themeColors.foreground)
+                                }
+        
+                                Text(
+                                    text = styledText,
+                                    fontFamily = fontFamily,
+                                    fontSize = fontSize.sp,
+                                    color = themeColors.foreground,
+                                    lineHeight = (fontSize + 4).sp,
+                                    softWrap = false,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip
+                                )
                             }
-    
-                            Text(
-                                text = finalStyledText,
-                                fontFamily = fontFamily,
-                                fontSize = fontSize.sp,
-                                color = themeColors.foreground,
-                                lineHeight = (fontSize + 4).sp,
-                                softWrap = false,
-                                maxLines = 1,
-                                overflow = TextOverflow.Clip
-                            )
-                        } else {
-                            // Baris history normal
-                            val styledText = remember(line, themeColors.foreground) {
-                                AnsiParser.parse(line, themeColors.foreground)
-                            }
-    
-                            Text(
-                                text = styledText,
-                                fontFamily = fontFamily,
-                                fontSize = fontSize.sp,
-                                color = themeColors.foreground,
-                                lineHeight = (fontSize + 4).sp,
-                                softWrap = false,
-                                maxLines = 1,
-                                overflow = TextOverflow.Clip
-                            )
                         }
                     }
                 }
             }
-
-        }
     }
 
         DropdownMenu(
@@ -513,8 +465,7 @@ fun App(
             DropdownMenuItem(
                     text = { Text("Clear") },
                     onClick = {
-                        lines.clear()
-                        lines.add(TerminalLine(lineIdCounter.getAndIncrement(), ""))
+                        viewModel.clear()
                         showContextMenu = false
                     }
             )
