@@ -98,6 +98,29 @@ impl<'a> Perform for LogInterpreter<'a> {
             .unwrap_or(1) as usize;
 
         match action {
+            'J' => {
+                let p_val = params.iter().next()
+                    .and_then(|slice| slice.iter().next())
+                    .map(|&v| v)
+                    .unwrap_or(0);
+                
+                if p_val == 2 {
+                    self.buffer.clear();
+                    self.buffer.push_back(String::new());
+                    *cursor_guard = 0;
+                } else if p_val == 0 {
+                    if let Some(line) = self.buffer.back_mut() {
+                        let cur_val = *cursor_guard;
+                        let current_len = line.chars().count();
+                        if cur_val < current_len {
+                             let mut chars: Vec<char> = line.chars().collect();
+                             chars.truncate(cur_val);
+                             *line = chars.into_iter().collect();
+                        }
+                    }
+                }
+            },
+            'H' => *cursor_guard = 0,
             'G' => *cursor_guard = if param > 0 { param - 1 } else { 0 },
             'K' => {
                 let p_val = params.iter().next()
