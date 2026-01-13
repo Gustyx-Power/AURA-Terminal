@@ -34,7 +34,7 @@ compose.desktop {
         mainClass = "MainKt"
         
         // Dynamic library path based on OS
-        val libraryPath = if (OperatingSystem.current().isMacOsX) 
+        val libraryPath = if (OperatingSystem.current().isMacOsX || OperatingSystem.current().isLinux) 
             "${project.projectDir}/src/main/resources" 
         else 
             "${project.projectDir}/lib/windows"
@@ -53,7 +53,14 @@ compose.desktop {
             modules("java.instrument", "java.management", "java.naming", "java.sql", "jdk.management")
 
             linux {
-                iconFile.set(project.file("icons/icon.png"))
+                targetFormats(TargetFormat.Deb, TargetFormat.Rpm)                iconFile.set(project.file("src/main/resources/icon.png"))
+
+                packageName = "aura-terminal" 
+                packageVersion = "1.0.0"
+                appCategory = "System"
+                debMaintainer = "gustyx <gustyx@aura.terminal>" 
+
+
             }
 
             macOS {
@@ -101,7 +108,7 @@ val copyNativeLibs by tasks.registering(Copy::class) {
     }
     
     val destPath = when {
-        currentOs.isMacOsX -> "src/main/resources"
+        currentOs.isMacOsX || currentOs.isLinux -> "src/main/resources"
         else -> "lib/windows" 
     }
 
@@ -126,6 +133,8 @@ afterEvaluate {
     tasks.findByName("packageDmg")?.dependsOn(copyNativeLibs)
     tasks.findByName("prepareAppResources")?.dependsOn(copyNativeLibs)
     tasks.findByName("processResources")?.dependsOn(copyNativeLibs)
+    tasks.findByName("packageDeb")?.dependsOn(copyNativeLibs)
+    tasks.findByName("packageRpm")?.dependsOn(copyNativeLibs)
 }
 
 
