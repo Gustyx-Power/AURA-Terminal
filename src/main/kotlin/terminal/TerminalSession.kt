@@ -151,20 +151,13 @@ class TerminalSession(
                         val buffer = ByteArray(8192)
                         
                         while (isActive && isRunning) {
-                             val available = inputStream.available()
-                             if (available > 0) {
-                                 // Read whatever is available or up to buffer size
                                  val readCount = inputStream.read(buffer)
                                  if (readCount == -1) break
                                  
                                  if (readCount > 0) {
-                                     // Crucial: emit only valid bytes
                                      val data = buffer.copyOfRange(0, readCount)
                                      _outputFlow.emit(data)
                                  }
-                             } else {
-                                 delay(10) // Small delay to prevent tight loop
-                             }
                         }
                     } catch (e: Exception) {
                         if (isRunning)
