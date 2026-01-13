@@ -54,7 +54,6 @@ fun StatusBar(
                     var newMemoryUsage = "N/A"
                     
                     if (osName.contains("linux")) {
-                        // Linux: Read from /proc/meminfo
                         val memInfo = File("/proc/meminfo").readLines()
                         val totalLine = memInfo.find { it.startsWith("MemTotal:") }
                         val availableLine = memInfo.find { it.startsWith("MemAvailable:") }
@@ -71,14 +70,16 @@ fun StatusBar(
                             newMemoryUsage = "%.1fGB/%.0fGB (%d%%)".format(usedGb, totalGb, percent)
                         }
                     } else if (osName.contains("mac") || osName.contains("darwin")) {
-                         // macOS logic (Simplified for IO context)
                         val totalBytes = Runtime.getRuntime().exec(arrayOf("sysctl", "-n", "hw.memsize"))
                             .inputStream.bufferedReader().readText().trim().toLongOrNull() ?: 0L
                         
                         val vmStat = Runtime.getRuntime().exec("vm_stat")
                             .inputStream.bufferedReader().readText()
                         
-                        val pageSize = 16384L 
+                        val pageSize = try {
+                            Runtime.getRuntime().exec(arrayOf("sysctl", "-n", "hw.pagesize"))
+                                .inputStream.bufferedReader().readText().trim().toLongOrNull() ?: 4096L
+                        } catch (e: Exception) { 4096L } 
                         var freePages = 0L
                         var inactivePages = 0L
                         var speculativePages = 0L
@@ -103,7 +104,6 @@ fun StatusBar(
                         
                         newMemoryUsage = "%.1fGB/%.0fGB (%d%%)".format(usedGb, totalGb, percent)
                     } else if (osName.contains("windows")) {
-                        // Windows logic
                         try {
                             val totalMemResult = Runtime.getRuntime().exec(arrayOf(
                                 "powershell", "-NoProfile", "-Command",
