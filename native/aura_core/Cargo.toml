@@ -1,5 +1,5 @@
 [package]
-name = "aura_core"
+name = "aura_terminal_core"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,3 +9,4 @@ crate-type = ["cdylib"]
 [dependencies]
 jni = "0.21"
 lazy_static = "1.4"
+vte = "0.11"
