@@ -1,7 +1,7 @@
 # AURA-Terminal
 > A Modern Terminal For User
 
-![Banner](assets/aura-terminal.png)
+![Banner](assets/aura-banner.png)
 
 AURA-Terminal is a modern, cross-platform terminal emulator built with Kotlin Multiplatform and JetBrains Compose. It features a sleek, transparent UI, extensive customization options, and a focus on user experience.
 
