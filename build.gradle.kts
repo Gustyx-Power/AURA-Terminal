@@ -73,6 +73,13 @@ compose.desktop {
 
                 appResourcesRootDir.set(project.layout.projectDirectory.dir("lib"))
             }
+
+            buildTypes.release.proguard {
+                version.set("7.3.2")
+                obfuscate.set(true)
+                optimize.set(true)
+                configurationFiles.from(project.file("compose-desktop.pro"))
+            }
         }
     }
 }
