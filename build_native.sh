@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Source cargo env to ensure cargo is found
+if [ -f "$HOME/.cargo/env" ]; then
+    . "$HOME/.cargo/env"
+fi
+
 OS="$(uname -s)"
 echo "Detected OS: $OS"
 
@@ -20,24 +25,44 @@ fi
 
 cd ../..
 
+# --- PERBAIKAN NAMA FILE DISINI ---
 if [ "$OS" = "Linux" ]; then
-    TARGET="native/aura_core/target/release/libaura_core.so"
+    # Sesuaikan nama file dengan [package] name di Cargo.toml
+    # Jika namanya "aura_terminal_core", maka outputnya "libaura_terminal_core.so"
+    TARGET="native/aura_core/target/release/libaura_terminal_core.so" 
+    
     if [ -f "$TARGET" ]; then
         cp "$TARGET" .
-        echo "Build complete! Native lib (libaura_core.so) placed in project root."
+        echo "Build complete! Linux lib copied to project root."
     else
-        echo "Error: Output file not found at $TARGET"
-        exit 1
+        # Fallback cek nama lama (jaga-jaga)
+        TARGET_OLD="native/aura_core/target/release/libaura_core.so"
+        if [ -f "$TARGET_OLD" ]; then
+             cp "$TARGET_OLD" .
+             echo "Build complete! (Using old name: libaura_core.so)"
+        else
+             echo "Error: Output file not found. Check your Cargo.toml package name!"
+             exit 1
+        fi
     fi
 elif [ "$OS" = "Darwin" ]; then
-    TARGET="native/aura_core/target/release/libaura_core.dylib"
+    # Sesuaikan nama file dengan [package] name di Cargo.toml
+    TARGET="native/aura_core/target/release/libaura_terminal_core.dylib"
+    
     if [ -f "$TARGET" ]; then
         cp "$TARGET" .
-        echo "Build complete! Native lib (libaura_core.dylib) placed in project root."
+        echo "Build complete! macOS lib copied to project root."
     else
-        echo "Error: Output file not found at $TARGET"
-        exit 1
+        # Fallback cek nama lama
+        TARGET_OLD="native/aura_core/target/release/libaura_core.dylib"
+        if [ -f "$TARGET_OLD" ]; then
+             cp "$TARGET_OLD" .
+             echo "Build complete! (Using old name: libaura_core.dylib)"
+        else
+             echo "Error: Output file not found. Check your Cargo.toml package name!"
+             exit 1
+        fi
     fi
 else
-    echo "Warning: Unsupported or unknown OS '$OS'. Please copy the library manually."
+    echo "Warning: Unsupported OS '$OS'"
 fi
